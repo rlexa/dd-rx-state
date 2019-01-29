@@ -66,6 +66,12 @@ export const actor = <T>(...type: string[]) => {
   return <Actor<T>>{ type: _type, new: (value: T) => <Action<T>>{ type: _type, value } };
 }
 
+export const toState$ = <T>(action$: ActionStream, init: T, reduce: ActionReducer<T>) =>
+  merge(of(init), action$.pipe(scan(reduce, init)))
+    .pipe(distinctUntilChanged());
+
+export const toState$_ = <T>(init: T, reduce: ActionReducer<T>) => (action$: ActionStream) => toState$(action$, init, reduce);
+
 export const assemble$ = <T extends object>(base: T | Observable<T>, parts?: { [K in keyof T]: (Observable<T[K]> | T[K]) }) => {
   const base$ = isObservable(base) ? base : of(typeof base === 'object' ? base : <T>{});
   const part$s = Object
@@ -85,12 +91,6 @@ export const assemble$_ = <T extends { [key: string]: any }>(base: T | StreamToS
       .forEach(([key, value]) => _parts[key] = typeof value === 'function' ? (value as StreamToState<T>)(action$) : value);
     return assemble$(_base, _parts);
   }
-
-export const toState$ = <T>(action$: ActionStream, init: T, reduce: ActionReducer<T>) =>
-  merge(of(init), action$.pipe(scan(reduce, init)))
-    .pipe(distinctUntilChanged());
-
-export const toState$_ = <T>(init: T, reduce: ActionReducer<T>) => (action$: ActionStream) => toState$(action$, init, reduce);
 
 class StoreImpl<T> implements Store<T> {
   action$ = <Observable<Action<any>>>null;

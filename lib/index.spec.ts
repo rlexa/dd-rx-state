@@ -1,4 +1,5 @@
-import { actor, forceBool, forceNum, jsonEqual, orArray, orNull, orObject, orZero, or_, redMerge, redMergeProperty_, redSet, redSetPropertyIfNotEqual_, redSetPropertyIfNotSame_, reducers_, setPropertyIfNotEqual, setPropertyIfNotSame } from './index';
+import { Subject } from 'rxjs';
+import { Action, actor, assemble$, assemble$_, forceBool, forceNum, jsonEqual, orArray, orNull, orObject, orZero, or_, redMerge, redMergeProperty_, redSet, redSetPropertyIfNotEqual_, redSetPropertyIfNotSame_, reducers_, setPropertyIfNotEqual, setPropertyIfNotSame, toState$, toState$_ } from './index';
 
 describe('rx state', () => {
 
@@ -123,6 +124,7 @@ describe('rx state', () => {
     expect(red({ a: 0, b: '', c: false }, { type: 'IncrementValueIntoA', value: 1 })).toEqual({ a: 2, b: '', c: false });
     expect(red({ a: 0, b: '', c: false }, { type: 'TrimValueIntoB', value: '  trimmed!  ' })).toEqual({ a: 0, b: 'trimmed!', c: false });
     expect(red({ a: 0, b: '', c: false }, { type: 'ToggleValueIntoC', value: false })).toEqual({ a: 0, b: '', c: true });
+    expect(red({ a: 0, b: '', c: false }, { type: 'SomeOtherAction', value: 'some value' })).toEqual({ a: 0, b: '', c: false });
   });
 
   test('actor', () => {
@@ -131,13 +133,137 @@ describe('rx state', () => {
     expect(set_authstring.new('User:Password')).toEqual({ type: 'SET_GLOBAL_STATE_NETWORK_SETTINGS_authstring', value: 'User:Password' });
   });
 
-  // assemble$
+  test('toState$', () => {
+    interface Test { a?: number, b?: string, c?: boolean };
+    let state = <Test>null;
 
-  // assemble$_
+    const action$ = new Subject<Action<any>>();
+    const state$ = toState$(action$, <Test>{ a: 0, b: '', c: false }, reducers_({ 'ActMerge': redMerge }));
+    state$.subscribe(_ => state = _);
+    expect(state).toEqual({ a: 0, b: '', c: false });
+    expect(action$.observers.length).toBe(1);
 
-  // toState$
+    action$.next({ type: 'SomeAction', value: <Test>{ a: 1 } });
+    expect(state).toEqual({ a: 0, b: '', c: false });
 
-  // toState$_
+    action$.next({ type: 'ActMerge', value: <Test>{ a: 1 } });
+    expect(state).toEqual({ a: 1, b: '', c: false });
+
+    action$.complete();
+  });
+
+  test('toState$_', () => {
+    interface Test { a?: number, b?: string, c?: boolean };
+    let state = <Test>null;
+    const state$_ = toState$_(<Test>{ a: 0, b: '', c: false }, reducers_({ 'ActMerge': redMerge }));
+
+    const action$ = new Subject<Action<any>>();
+    state$_(action$).subscribe(_ => state = _);
+    expect(state).toEqual({ a: 0, b: '', c: false });
+    expect(action$.observers.length).toBe(1);
+
+    action$.next({ type: 'SomeAction', value: <Test>{ a: 1 } });
+    expect(state).toEqual({ a: 0, b: '', c: false });
+
+    action$.next({ type: 'ActMerge', value: <Test>{ a: 1 } });
+    expect(state).toEqual({ a: 1, b: '', c: false });
+
+    action$.complete();
+  });
+
+  test('assemble$ with base being just init object', () => {
+    interface TestNested { a?: number, b?: string, c?: boolean };
+    interface Test { a?: TestNested, b?: string };
+    let state = <Test>null;
+
+    const action$ = new Subject<Action<any>>();
+    const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state$ = assemble$(<Test>{ a: null, b: 'parent' }, { 'a': state_nested$ });
+    state$.subscribe(_ => state = _);
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+    expect(action$.observers.length).toBe(1);
+
+    action$.next({ type: 'SomeAction', value: { a: 2 } });
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActMerge', value: <TestNested>{ a: 1 } });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'parent' });
+
+    action$.complete();
+  });
+
+  test('assemble$ with base being observable itself', () => {
+    interface TestNested { a?: number, b?: string, c?: boolean };
+    interface Test { a?: TestNested, b?: string };
+    let state = <Test>null;
+
+    const action$ = new Subject<Action<any>>();
+    const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state_parent$ = toState$(action$, <Test>{ a: null, b: 'parent' }, reducers_({ 'ActSetB': redSetPropertyIfNotSame_('b') }));
+    const state$ = assemble$(state_parent$, { 'a': state_nested$ });
+    state$.subscribe(_ => state = _);
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+    expect(action$.observers.length).toBe(2);
+
+    action$.next({ type: 'SomeAction', value: { a: 2 } });
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActMerge', value: <TestNested>{ a: 1 } });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActSetB', value: 'proud parent' });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'proud parent' });
+
+    action$.complete();
+  });
+
+  test('assemble$_ with base being just init object', () => {
+    interface TestNested { a?: number, b?: string, c?: boolean };
+    interface Test { a?: TestNested, b?: string };
+    let state = <Test>null;
+
+    const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state$_ = assemble$_(<Test>{ a: null, b: 'parent' }, { 'a': state_nested$_ });
+
+    const action$ = new Subject<Action<any>>();
+    state$_(action$).subscribe(_ => state = _);
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+    expect(action$.observers.length).toBe(1);
+
+    action$.next({ type: 'SomeAction', value: { a: 2 } });
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActMerge', value: <TestNested>{ a: 1 } });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'parent' });
+
+    action$.complete();
+  });
+
+  test('assemble$_ with base being observable itself', () => {
+    interface TestNested { a?: number, b?: string, c?: boolean };
+    interface Test { a?: TestNested, b?: string };
+    let state = <Test>null;
+
+    const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state_parent$_ = toState$_(<Test>{ a: null, b: 'parent' }, reducers_({ 'ActSetB': redSetPropertyIfNotSame_('b') }));
+    const state$_ = assemble$_(state_parent$_, { 'a': state_nested$_ });
+
+    const action$ = new Subject<Action<any>>();
+    state$_(action$).subscribe(_ => state = _);
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+    expect(action$.observers.length).toBe(2);
+
+    action$.next({ type: 'SomeAction', value: { a: 2 } });
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActMerge', value: <TestNested>{ a: 1 } });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActSetB', value: 'proud parent' });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'proud parent' });
+
+    action$.complete();
+  });
 
   // StoreImpl
 
