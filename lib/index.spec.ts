@@ -1,5 +1,6 @@
-import { Subject } from 'rxjs';
-import { Action, actor, assemble$, assemble$_, forceBool, forceNum, jsonEqual, orArray, orNull, orObject, orZero, or_, redMerge, redMergeProperty_, redSet, redSetPropertyIfNotEqual_, redSetPropertyIfNotSame_, reducers_, setPropertyIfNotEqual, setPropertyIfNotSame, toState$, toState$_ } from './index';
+import { Subject, timer } from 'rxjs';
+import { take, takeUntil } from 'rxjs/operators';
+import { Action, actor, assemble$, assemble$_, createStore, forceBool, forceNum, jsonEqual, orArray, orNull, orObject, orZero, or_, redMerge, redMergeProperty_, redSet, redSetPropertyIfNotEqual_, redSetPropertyIfNotSame_, reducers_, RxState, setPropertyIfNotEqual, setPropertyIfNotSame, toState$, toState$_ } from './index';
 
 describe('rx state', () => {
 
@@ -265,10 +266,115 @@ describe('rx state', () => {
     action$.complete();
   });
 
-  // StoreImpl
+  test('createStore', () => {
+    interface TestNested { e?: string };
+    interface Test { a?: number, b?: string, c?: boolean, d?: TestNested };
 
-  // createStore
+    const set_a = actor<number>('SetA');
+    const set_b = actor<string>('SetB');
+    const set_c = actor<boolean>('SetC');
+    const set_e = actor<string>('SetE');
+    const state_parent$ = toState$_(
+      <Test>{ a: 0, b: '', c: false, d: null },
+      reducers_({
+        [set_a.type]: redSetPropertyIfNotSame_('a'),
+        [set_b.type]: redSetPropertyIfNotSame_('b'),
+        [set_c.type]: redSetPropertyIfNotSame_('c'),
+      }));
+    const state_nested$ = toState$_(
+      <TestNested>{ e: '' },
+      reducers_({
+        [set_e.type]: redSetPropertyIfNotSame_('e'),
+      }));
+    const state$ = assemble$_(state_parent$, { d: state_nested$ });
 
-  // RxState
+    const store = createStore(state$);
+
+    let state = <Test>null;
+    store.state$.subscribe(_ => state = _);
+    expect(state).toEqual({ a: 0, b: '', c: false, d: { e: '' } });
+    expect(store.getState()).toEqual({ a: 0, b: '', c: false, d: { e: '' } });
+
+    store.dispatch(set_a.new(1));
+    expect(state).toEqual({ a: 1, b: '', c: false, d: { e: '' } });
+    expect(store.getState()).toEqual({ a: 1, b: '', c: false, d: { e: '' } });
+
+    store.dispatch(set_b.new('yep'));
+    expect(state).toEqual({ a: 1, b: 'yep', c: false, d: { e: '' } });
+    expect(store.getState()).toEqual({ a: 1, b: 'yep', c: false, d: { e: '' } });
+
+    store.dispatch(set_c.new(true));
+    expect(state).toEqual({ a: 1, b: 'yep', c: true, d: { e: '' } });
+    expect(store.getState()).toEqual({ a: 1, b: 'yep', c: true, d: { e: '' } });
+
+    store.dispatch(set_e.new('nested'));
+    expect(state).toEqual({ a: 1, b: 'yep', c: true, d: { e: 'nested' } });
+    expect(store.getState()).toEqual({ a: 1, b: 'yep', c: true, d: { e: 'nested' } });
+
+    store.destruct();
+  });
+
+  test('RxState', done => {
+    interface TestNested { e?: string };
+    interface Test { a?: number, b?: string, c?: boolean, d?: TestNested };
+
+    const set_a = actor<number>('SetA');
+    const set_b = actor<string>('SetB');
+    const set_c = actor<boolean>('SetC');
+    const set_e = actor<string>('SetE');
+    const state_parent$ = toState$_(
+      <Test>{ a: 0, b: '', c: false, d: null },
+      reducers_({
+        [set_a.type]: redSetPropertyIfNotSame_('a'),
+        [set_b.type]: redSetPropertyIfNotSame_('b'),
+        [set_c.type]: redSetPropertyIfNotSame_('c'),
+      }));
+    const state_nested$ = toState$_(
+      <TestNested>{ e: '' },
+      reducers_({
+        [set_e.type]: redSetPropertyIfNotSame_('e'),
+      }));
+    const state$ = assemble$_(state_parent$, { d: state_nested$ });
+
+    const rxState = new RxState(createStore(state$));
+    const act_set_a = rxState.act_(set_a);
+    const act_set_b = rxState.act_(set_b);
+    const act_set_c = rxState.act_(set_c);
+    const act_set_e = rxState.act_(set_e);
+
+    const done$ = new Subject();
+    expect(rxState.dbgGetWatchers()).toBe(0);
+
+    let state_e = <string>null;
+    rxState.watch(state => state.d.e, done$).pipe(takeUntil(done$)).subscribe(_ => state_e = _);
+    expect(rxState.dbgGetWatchers()).toBe(1);
+
+    expect(rxState.state).toEqual({ a: 0, b: '', c: false, d: { e: '' } });
+    expect(state_e).toBe('');
+
+    act_set_a(1);
+    expect(rxState.state).toEqual({ a: 1, b: '', c: false, d: { e: '' } });
+    expect(state_e).toBe('');
+
+    act_set_b('yep');
+    expect(rxState.state).toEqual({ a: 1, b: 'yep', c: false, d: { e: '' } });
+    expect(state_e).toBe('');
+
+    act_set_c(true);
+    expect(rxState.state).toEqual({ a: 1, b: 'yep', c: true, d: { e: '' } });
+    expect(state_e).toBe('');
+
+    act_set_e('nested');
+    expect(rxState.state).toEqual({ a: 1, b: 'yep', c: true, d: { e: 'nested' } });
+    expect(state_e).toBe('nested');
+
+    done$.next();
+    done$.complete();
+    timer(1000).pipe(take(1)).subscribe(() => {
+      expect(rxState.dbgGetWatchers()).toBe(0);
+      rxState.destroy();
+      done();
+    });
+  });
 
 });
