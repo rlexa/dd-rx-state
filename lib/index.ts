@@ -32,12 +32,12 @@ export const orObject = <T extends object>(val: T) => val || <T>{};
 export const orZero = (val: number) => val || 0;
 
 export const setPropertyIfNotSame = <T extends object, K extends keyof T>(state: T, key: K, value: T[K]): T =>
-  state[key] === value ? state : Object.assign({}, state, { [key]: value });
+  !state || state[key] === value ? state : Object.assign({}, state, { [key]: value });
 export const redSetPropertyIfNotSame_ = <T extends object, K extends keyof T>(key: K) =>
   (state: T, value: T[K]) => setPropertyIfNotSame(state, key, value);
 
 export const setPropertyIfNotEqual = <T extends object, K extends keyof T>(state: T, key: K, value: T[K]): T =>
-  state[key] === value || jsonEqual(state[key], value) ? state : Object.assign({}, state, { [key]: value });
+  !state || state[key] === value || jsonEqual(state[key], value) ? state : Object.assign({}, state, { [key]: value });
 export const redSetPropertyIfNotEqual_ = <T extends object, K extends keyof T>(key: K) =>
   (state: T, value: T[K]) => setPropertyIfNotEqual(state, key, value);
 
@@ -51,6 +51,7 @@ export const redMerge = <T extends { [key: string]: any }>(state: T, value: T): 
 }
 
 export const redMergeProperty_ = <T extends object, K extends keyof T>(key: K) => (state: T, value: T[K]): T => {
+  state = state || <T>{};
   const nested = state[key] as any as object;
   const merged = redMerge(nested, value as any as object);
   const ret = nested === merged ? state : Object.assign({}, state, { [key]: merged });
