@@ -370,7 +370,7 @@ describe('rx state', () => {
 
     done$.next();
     done$.complete();
-    timer(1000).pipe(take(1)).subscribe(() => {
+    timer(rxState.dbgGetCheckWatchersMs() + 100).pipe(take(1)).subscribe(() => {
       expect(rxState.dbgGetWatchers()).toBe(0);
       rxState.destroy();
       done();
