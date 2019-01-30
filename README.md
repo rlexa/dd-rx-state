@@ -4,7 +4,7 @@
 
 # dd-rx-state
 
-Redux-like state handling, but created with rxjs and allowing for less but typesafe boilerplate with typescript.
+Redux-like state handling, but created with rxjs and allowing for less but typesafe boilerplate with typescript ([Source Code]).
 
 ## Info <a name="Info"></a>
 
@@ -365,3 +365,9 @@ export class UserComponent {
   logout = () => this.rxMutateUserInfo.setOauthActive(false);
 }
 ```
+
+## License
+
+MIT
+
+[Source Code]: https://github.com/rlexa/dd-rx-state
