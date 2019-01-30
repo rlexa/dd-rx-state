@@ -1,5 +1,210 @@
 # dd-rx-state
+
 Redux-like state handling, but created with rxjs and allowing for less but typesafe boilerplate with typescript (*for Angular developers see "Angular Quickstart" below*).
+
+Same as with Redux the global state needs to be identified and then built using actions (with unique names i.e. `type`s) and state reducers (functions which take the current state and return either the same state if nothing changed or the mutated copy). The difference is that the state assembling results in an Observable stream of the state and that for static type safety the use of `Actor` is encouraged over the use of `Action` (though it is also possible to dispatch the actions directly in the store).
+
+## Example
+
+Task: a part of an UI client needs to filter, sort and show e.g. names of products.
+
+### Identify State
+
+Following parts are needed:
+- the products are shown as list of names
+- the list can be sorted
+- the list can be filtered by:
+  - a list of brands (or all if empty)
+  - a string filter for the name (or any if empty)
+  - a map of arbitrary key-value tags (or any if empty)
+
+```typescript
+interface ProductsFilter {
+  brands?: string[],
+  nameFilter?: string,
+  tags?: { [key: string]: string },
+}
+
+export interface StateViewProducts {
+  filter?: ProductsFilter,
+  products?: string[],
+  sortAsc?: boolean,
+}
+```
+
+### Identify Actions
+
+Identifying the actions/actors is pretty easy now that the state is clear.
+
+Keep in mind that the `Action.type` must be unique for all actions (same as in Redux), so let's create an interfix to be used in the current state's actions to prevent accidental repeating of types.
+
+```typescript
+import { STATETAG as PARENT_STATETAG } from './state';
+
+// ... state interfaces ...
+
+// PARENT_STATETAG could be e.g. 'UI'
+const STATETAG = PARENT_STATETAG + '_PRODUCTS';
+
+// now let's define the actors for ProductsFilter
+export const reset_filter = actor<ProductsFilter>('RESET', STATETAG, 'filter');
+export const set_filter_brands = actor<string[]>('SET', STATETAG, 'filter', 'brands');
+export const set_filter_nameFilter = actor<string>('SET', STATETAG, 'filter', 'nameFilter');
+export const set_filter_tags = actor<{ [key: string]: string }>('SET', STATETAG, 'filter', 'tags');
+
+// and actors for StateViewProducts
+export const set_products = actor<string[]>('SET', STATETAG, 'products');
+export const set_sortAsc = actor<boolean>('SET', STATETAG, 'sortAsc');
+```
+
+Notice how the `StateViewProducts.filter` property does not have an actor - this state will be completely assembled from the existing `ProductsFilter` actors.
+
+### Create State
+
+Using the interfaces and actors the states now can be created and assembled accordingly.
+
+```typescript
+export const DEFAULT_FILTER = <ProductsFilter>{ brands: [], nameFilter: null, tags: {} };
+
+const state_filter$ = toState$_(
+  DEFAULT_FILTER,
+  reducers_(
+    {
+      [reset_filter.type]: redSet,
+      [set_filter_brands.type]: redSetPropertyIfNotEqual_('brands'),
+      [set_filter_nameFilter.type]: redSetPropertyIfNotSame_('nameFilter'),
+      [set_filter_tags.type]: redSetPropertyIfNotEqual_('tags'),
+    }));
+
+const state_view$ = toState$_(
+  <StateViewProducts>{ filter: null, products: [], sortAsc: true },
+  reducers_(
+    {
+      [set_products.type]: redSetPropertyIfNotEqual_('products'),
+      [set_sortAsc.type]: redSetPropertyIfNotSame_('sortAsc'),
+    }));
+
+export const state_view_products$ = assemble$_(state_view$, { filter: state_filter$ });
+```
+
+And that's it - there is no more boilerplate code needed than that. Furthermore most parts are typesafe i.e. `redSetPropertyIfNotSame_` will check for the field name to actually be a key of the state type.
+
+The assembled `state_view_products$` must now be assembled in the whatever parent state, for example:
+
+```typescript
+import { state_view_products$ } from './state-products';
+
+export interface UiState {
+  ...
+  viewProducts?: StateViewProducts,
+  ...
+}
+
+export const state_ui$ = assemble$_(
+  <UiState>{
+    ...
+    viewProducts: null,
+    ...
+  }, {
+    ...
+    viewProducts: state_view_products$,
+    ...
+  });
+```
+
+### Watch State
+
+Let's now assume that we have a `RxStateUi extends RxState<UiState>` and two components are to be created: `ProductsFilterComponent` and `ViewProductsComponent`.
+
+*Note: following snippets are not complete due to unknown frontend framework.*
+
+#### ProductsFilterComponent
+
+This component presents and mutates the filter values and sorting.
+
+```typescript
+export class ProductsFilterComponent {
+  constructor(private readonly rxState: RxStateUi) { }
+  
+  private readonly done$ = new Subject();
+
+  // state observables - e.g. use with async in Angular HTML templates
+
+  readonly brands$ = this.rxState.watch(state => state.viewProducts.filter.brands, this.done$);
+  readonly nameFilter$ = this.rxState.watch(state => state.viewProducts.filter.nameFilter, this.done$);
+  readonly tags$ = this.rxState.watch(state => state.viewProducts.filter.tags, this.done$);
+  readonly sortAsc$ = this.rxState.watch(state => state.viewProducts.sortAsc, this.done$);
+
+  // state mutators - called from HTML template
+
+  setBrands = this.rxState.act_(set_filter_brands, orArray);
+  setName = this.rxState.act_(set_filter_nameFilter, orNull);
+  setTags = this.rxState.act_(set_filter_tags, orObject);
+  setSortAsc = this.rxState.act_(set_sortAsc, forceBool);
+  resetFilter = () => this.rxState.act(reset_filter, DEFAULT_FILTER);
+
+  destroy() {
+    this.done$.next();
+    this.done$.complete();
+  }
+}
+```
+
+*Note: in e.g. VS Code all the observables and setters show and expect the correct types.*
+
+#### ViewProductsComponent
+
+This component shows the products and reloads the result according to filter values and sorting.
+
+```typescript
+export class ViewProductsComponent {
+  constructor(private readonly rxState: RxStateUi, private readonly api: ProductsApi) { }
+  
+  private readonly done$ = new Subject();
+
+  // state observables for reacting to
+
+  private readonly filter$ = this.rxState.watch(state => state.viewProducts.filter, this.done$);
+  private readonly sortAsc$ = this.rxState.watch(state => state.viewProducts.sortAsc, this.done$);
+
+  // state observables - e.g. use with async in Angular HTML templates
+
+  readonly products$ = this.rxState.watch(state => state.viewProducts.products, this.done$);
+  
+  // state mutators
+
+  private setProducts = this.rxState.act_(set_products, orArray);
+
+  init() {
+    combineLatest(this.filter$, this.sortAsc$)
+      .pipe(
+        debounceTime(0),
+        switchMap(([filter, sortAsc]) => this.api.httpGetProducts$(filter, sortAsc)),
+        takeUntil(this.done$))
+      .subscribe(this.setProducts);
+  }
+
+  destroy() {
+    this.done$.next();
+    this.done$.complete();
+  }
+}
+```
+
+For not-rxjs-savvy developers; the `init()` function:
+- watches the latest values from filter and sorting with `combineLatest`
+- waits for a frame after any change with `debounceTime` to throttle rapid filter changes
+  - i.e. to not request and cancel the api requests unnecessarily
+- goes over to requesting the actual products via some api with `switchMap`
+- registers cancel of this stream when `done$` is fired with `takeUntil`
+  - i.e. to cancel any requests still running when component gets destroyed
+- mutates the state by setting the received products
+  - which will be reflected in the `products$` Observable immediately afterwards
+    - which makes it very easy to separate the view part from the requesting part if desired
+
+### Result
+
+Using `dd-rx-state` the state boilerplate can be held at a minimum while still providing type safety in most parts. Using the reactive nature of the state observers the state watching can be done in just a few lines without resorting to callbacks. Using actors it is very easy to create type safe mutator functions.
 
 # Angular Quickstart
 
@@ -130,3 +335,7 @@ export class UserComponent {
   logout = () => this.rxMutateUserInfo.setOauthActive(false);
 }
 ```
+
+# API
+
+TODO
