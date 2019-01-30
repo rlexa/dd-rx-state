@@ -2,7 +2,7 @@
   "_help": {
     "npm run build": "build to dist",
     "npm login": "before publishing",
-    "npm publish dist": "publish to npm"
+    "npm publish": "publish to npm"
   },
   "name": "dd-rx-state",
   "version": "1.0.0",
