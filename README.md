@@ -1,10 +1,18 @@
+- [Info](#Info)
+- [HowTo](#Example)
+- [Angular](#Angular_Quickstart)
+
 # dd-rx-state
 
-Redux-like state handling, but created with rxjs and allowing for less but typesafe boilerplate with typescript (*for Angular developers see "Angular Quickstart" below*).
+Redux-like state handling, but created with rxjs and allowing for less but typesafe boilerplate with typescript.
 
-Same as with Redux the global state needs to be identified and then built using actions (with unique names i.e. `type`s) and state reducers (functions which take the current state and return either the same state if nothing changed or the mutated copy). The difference is that the state assembling results in an Observable stream of the state and that for static type safety the use of `Actor` is encouraged over the use of `Action` (though it is also possible to dispatch the actions directly in the store).
+## Info <a name="Info"></a>
 
-## Example
+*Note: for Angular developers check out [quickstart section](#Angular_Quickstart) further below.*
+
+Same as with Redux the global state needs to be identified and then built using actions (with unique names i.e. `type`s) and state reducers (functions which take the current state and an action and return either the same state if nothing changed or the mutated copy). The difference is that the state assembling results in an Observable stream of the state and that for static type safety the use of `Actor` is encouraged over the use of `Action` (though it is also possible to dispatch the actions directly in the store).
+
+## Example <a name="Example"></a>
 
 Task: a part of an UI client needs to filter, sort and show e.g. names of products.
 
@@ -64,6 +72,10 @@ Notice how the `StateViewProducts.filter` property does not have an actor - this
 Using the interfaces and actors the states now can be created and assembled accordingly.
 
 ```typescript
+
+// ... state interfaces ...
+// ... actors ...
+
 export const DEFAULT_FILTER = <ProductsFilter>{ brands: [], nameFilter: null, tags: {} };
 
 const state_filter$ = toState$_(
@@ -112,11 +124,26 @@ export const state_ui$ = assemble$_(
   });
 ```
 
+### Define `RxState`
+
+Let's assume that `UiState` is the top state and we create the `RxState` correspondingly:
+
+```typescript
+export class RxStateUi extends RxState<UiState> {
+  constructor(store: Store<State>) { super(store); }
+}
+
+...
+
+// alternatively all of this is done via e.g. Angular injections
+const rxState = new RxStateUi(createStore(state_ui$));
+```
+
 ### Watch State
 
-Let's now assume that we have a `RxStateUi extends RxState<UiState>` and two components are to be created: `ProductsFilterComponent` and `ViewProductsComponent`.
+Now two components are to be created: `ProductsFilterComponent` and `ViewProductsComponent`.
 
-*Note: following snippets are not complete due to unknown frontend framework.*
+*Note: following snippets are just samples due to unknown frontend framework.*
 
 #### ProductsFilterComponent
 
@@ -204,11 +231,14 @@ For not-rxjs-savvy developers; the `init()` function:
 
 ### Result
 
-Using `dd-rx-state` the state boilerplate can be held at a minimum while still providing type safety in most parts. Using the reactive nature of the state observers the state watching can be done in just a few lines without resorting to callbacks. Using actors it is very easy to create type safe mutator functions.
+- Using `dd-rx-state` the state boilerplate can be held at a minimum while still providing type safety in most parts
+- Using the reactive nature of the state observers the state watching can be done in just a few lines without resorting to callbacks
+- Using actors it is easy to create type safe mutator functions
+- Any UI components can now be destroyed and re-created and will always automatically show the last state (as it is now the only state)
 
-# Angular Quickstart
+# Angular Quickstart <a name="Angular_Quickstart"></a>
 
-With typescript being the standard for Angular applications the `dd-rx-state` dependency can completely replace Redux in a similar way.
+With typescript being the standard for Angular applications the `dd-rx-state` dependency can help to replace Redux in a more typescript friendly and typesafe way.
 
 ## Inject State
 
@@ -315,7 +345,7 @@ export const state_oauth$ = toState$_(
     active: false,
   },
   reducers_({
-    [set_oauth_active.type]: redSetPropertyIfNotEqual_('active'),
+    [set_oauth_active.type]: redSetPropertyIfNotSame_('active'),
   }));
 
 // Create a service just for mutating the UserInfo state
@@ -335,7 +365,3 @@ export class UserComponent {
   logout = () => this.rxMutateUserInfo.setOauthActive(false);
 }
 ```
-
-# API
-
-TODO
