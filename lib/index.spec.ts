@@ -1,6 +1,6 @@
 import { Subject, timer } from 'rxjs';
 import { take, takeUntil } from 'rxjs/operators';
-import { Action, actor, assemble$, assemble$_, createStore, forceBool, forceNum, jsonEqual, orArray, orNull, orObject, orZero, or_, redMerge, redMergeProperty_, redSet, redSetPropertyIfNotEqual_, redSetPropertyIfNotSame_, reducers_, RxState, setPropertyIfNotEqual, setPropertyIfNotSame, toState$, toState$_ } from './index';
+import { Action, actor, assemble$, assemble$_, createStore, forceBool, forceNum, initReduceAssemble$, initReduceAssemble$_, jsonEqual, orArray, orNull, orObject, orZero, or_, redMerge, redMergeProperty_, redSet, redSetPropertyIfNotEqual_, redSetPropertyIfNotSame_, reducers_, RxState, setPropertyIfNotEqual, setPropertyIfNotSame, toState$, toState$_ } from './index';
 
 describe('rx state', () => {
 
@@ -139,7 +139,7 @@ describe('rx state', () => {
     let state = <Test>null;
 
     const action$ = new Subject<Action<any>>();
-    const state$ = toState$(action$, <Test>{ a: 0, b: '', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state$ = toState$(action$, <Test>{ a: 0, b: '', c: false }, { 'ActMerge': redMerge });
     state$.subscribe(_ => state = _);
     expect(state).toEqual({ a: 0, b: '', c: false });
     expect(action$.observers.length).toBe(1);
@@ -156,7 +156,7 @@ describe('rx state', () => {
   test('toState$_', () => {
     interface Test { a?: number, b?: string, c?: boolean };
     let state = <Test>null;
-    const state$_ = toState$_(<Test>{ a: 0, b: '', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state$_ = toState$_(<Test>{ a: 0, b: '', c: false }, { 'ActMerge': redMerge });
 
     const action$ = new Subject<Action<any>>();
     state$_(action$).subscribe(_ => state = _);
@@ -178,7 +178,7 @@ describe('rx state', () => {
     let state = <Test>null;
 
     const action$ = new Subject<Action<any>>();
-    const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
     const state$ = assemble$(<Test>{ a: null, b: 'parent' }, { 'a': state_nested$ });
     state$.subscribe(_ => state = _);
     expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
@@ -199,8 +199,8 @@ describe('rx state', () => {
     let state = <Test>null;
 
     const action$ = new Subject<Action<any>>();
-    const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
-    const state_parent$ = toState$(action$, <Test>{ a: null, b: 'parent' }, reducers_({ 'ActSetB': redSetPropertyIfNotSame_('b') }));
+    const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
+    const state_parent$ = toState$(action$, <Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') });
     const state$ = assemble$(state_parent$, { 'a': state_nested$ });
     state$.subscribe(_ => state = _);
     expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
@@ -223,7 +223,7 @@ describe('rx state', () => {
     interface Test { a?: TestNested, b?: string };
     let state = <Test>null;
 
-    const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
+    const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
     const state$_ = assemble$_(<Test>{ a: null, b: 'parent' }, { 'a': state_nested$_ });
 
     const action$ = new Subject<Action<any>>();
@@ -240,17 +240,37 @@ describe('rx state', () => {
     action$.complete();
   });
 
-  test('assemble$_ with base being observable itself', () => {
+  test('initReduceAssemble$ with base being just init object', () => {
     interface TestNested { a?: number, b?: string, c?: boolean };
     interface Test { a?: TestNested, b?: string };
     let state = <Test>null;
 
-    const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
-    const state_parent$_ = toState$_(<Test>{ a: null, b: 'parent' }, reducers_({ 'ActSetB': redSetPropertyIfNotSame_('b') }));
-    const state$_ = assemble$_(state_parent$_, { 'a': state_nested$_ });
+    const action$ = new Subject<Action<any>>();
+    const state_nested$ = initReduceAssemble$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
+    const state$ = initReduceAssemble$(action$, <Test>{ a: null, b: 'parent' }, null, { 'a': state_nested$ });
+
+    state$.subscribe(_ => state = _);
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+    expect(action$.observers.length).toBe(2);
+
+    action$.next({ type: 'SomeAction', value: { a: 2 } });
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActMerge', value: <TestNested>{ a: 1 } });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'parent' });
+
+    action$.complete();
+  });
+
+  test('initReduceAssemble$ with base being observable itself', () => {
+    interface TestNested { a?: number, b?: string, c?: boolean };
+    interface Test { a?: TestNested, b?: string };
+    let state = <Test>null;
 
     const action$ = new Subject<Action<any>>();
-    state$_(action$).subscribe(_ => state = _);
+    const state_nested$ = initReduceAssemble$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
+    const state$ = initReduceAssemble$(action$, <Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') }, { a: state_nested$ });
+    state$.subscribe(_ => state = _);
     expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
     expect(action$.observers.length).toBe(2);
 
@@ -266,6 +286,31 @@ describe('rx state', () => {
     action$.complete();
   });
 
+  test('initReduceAssemble$_ with base being just init object', () => {
+    interface TestNested { a?: number, b?: string, c?: boolean };
+    interface Test { a?: TestNested, b?: string };
+    let state = <Test>null;
+
+    const state_nested$_ = initReduceAssemble$_(<TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
+    const state$_ = initReduceAssemble$_(<Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') }, { a: state_nested$_ });
+
+    const action$ = new Subject<Action<any>>();
+    state$_(action$).subscribe(_ => state = _);
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+    expect(action$.observers.length).toBe(2);
+
+    action$.next({ type: 'SomeAction', value: { a: 2 } });
+    expect(state).toEqual({ a: { a: 0, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActMerge', value: <TestNested>{ a: 1 } });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'parent' });
+
+    action$.next({ type: 'ActSetB', value: 'still_parent' });
+    expect(state).toEqual({ a: { a: 1, b: 'nested', c: false }, b: 'still_parent' });
+
+    action$.complete();
+  });
+
   test('createStore', () => {
     interface TestNested { e?: string };
     interface Test { a?: number, b?: string, c?: boolean, d?: TestNested };
@@ -276,16 +321,14 @@ describe('rx state', () => {
     const set_e = actor<string>('SetE');
     const state_parent$ = toState$_(
       <Test>{ a: 0, b: '', c: false, d: null },
-      reducers_({
+      {
         [set_a.type]: redSetPropertyIfNotSame_('a'),
         [set_b.type]: redSetPropertyIfNotSame_('b'),
         [set_c.type]: redSetPropertyIfNotSame_('c'),
-      }));
+      });
     const state_nested$ = toState$_(
       <TestNested>{ e: '' },
-      reducers_({
-        [set_e.type]: redSetPropertyIfNotSame_('e'),
-      }));
+      { [set_e.type]: redSetPropertyIfNotSame_('e') });
     const state$ = assemble$_(state_parent$, { d: state_nested$ });
 
     const store = createStore(state$);
@@ -324,16 +367,14 @@ describe('rx state', () => {
     const set_e = actor<string>('SetE');
     const state_parent$ = toState$_(
       <Test>{ a: 0, b: '', c: false, d: null },
-      reducers_({
+      {
         [set_a.type]: redSetPropertyIfNotSame_('a'),
         [set_b.type]: redSetPropertyIfNotSame_('b'),
         [set_c.type]: redSetPropertyIfNotSame_('c'),
-      }));
+      });
     const state_nested$ = toState$_(
       <TestNested>{ e: '' },
-      reducers_({
-        [set_e.type]: redSetPropertyIfNotSame_('e'),
-      }));
+      { [set_e.type]: redSetPropertyIfNotSame_('e') });
     const state$ = assemble$_(state_parent$, { d: state_nested$ });
 
     const rxState = new RxState(createStore(state$));

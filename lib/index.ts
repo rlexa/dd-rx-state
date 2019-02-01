@@ -8,10 +8,11 @@ export interface Action<T> {
 }
 
 export type ActionStream = Observable<Action<any>>;
-
 export type ActionReducer<T> = (state: T, action: Action<any>) => T;
-
+export type ValueReducer<T> = (state: T, value: any) => T;
 export type StreamToState<T> = (action$: ActionStream) => Observable<T>;
+
+export interface ActionHandlerMap<T> { [key: string]: ValueReducer<T> };
 
 /** Wrapper for creating `Action<T>`s. */
 export interface Actor<T> {
@@ -90,8 +91,8 @@ export const redMergeProperty_ = <T extends object, K extends keyof T>(key: K) =
  *   [act_set_c.type]: redSetPropertyIfNotSame_('c'),
  * });
  */
-export const reducers_ = <T>(actionTypeToHandler: { [key: string]: (_state: T, _value: any) => T }): ActionReducer<T> =>
-  (state, action) => action.type in actionTypeToHandler ? actionTypeToHandler[action.type](state, action.value) : state;
+export const reducers_ = <T>(actionTypeToHandler: ActionHandlerMap<T>): ActionReducer<T> =>
+  (state, action) => actionTypeToHandler && action.type in actionTypeToHandler ? actionTypeToHandler[action.type](state, action.value) : state;
 
 /**
  * Creates an `Actor` with type concatenated from the `type: string[]` parameter.
@@ -114,21 +115,21 @@ export const actor = <T>(...type: string[]) => {
  * @example
  * interface Test { a?: number, b?: string, c?: boolean };
  * const action$ = new Subject<Action<any>>();
- * const state$ = toState$(action$, <Test>{ a: 0, b: '', c: false }, reducers_({ 'ActMerge': redMerge }));
+ * const state$ = toState$(action$, <Test>{ a: 0, b: '', c: false }, { 'ActMerge': redMerge });
  */
-export const toState$ = <T>(action$: ActionStream, init: T, reduce: ActionReducer<T>) =>
-  merge(of(init), action$.pipe(scan(reduce, init)))
+export const toState$ = <T>(action$: ActionStream, init: T, reduce: ActionReducer<T> | ActionHandlerMap<T>) =>
+  merge(of(init), action$.pipe(scan(typeof reduce === 'function' ? reduce : reducers_(reduce), init)))
     .pipe(distinctUntilChanged());
 
 /**
  * Returns a creator for a state Observable emitting new state from scanning the `action$` stream.
  * @example
  * interface Test { a?: number, b?: string, c?: boolean };
- * const state$_ = toState$_(<Test>{ a: 0, b: '', c: false }, reducers_({ 'ActMerge': redMerge }));
+ * const state$_ = toState$_(<Test>{ a: 0, b: '', c: false }, { 'ActMerge': redMerge });
  * ...
  * const state$ = state$_(action$);
  */
-export const toState$_ = <T>(init: T, reduce: ActionReducer<T>) => (action$: ActionStream) => toState$(action$, init, reduce);
+export const toState$_ = <T>(init: T, reduce: ActionReducer<T> | ActionHandlerMap<T>) => (action$: ActionStream) => toState$(action$, init, reduce);
 
 /**
  * Assembles a state Observable emitting new state from combining a `base` object or Observable and `parts` values or Observables which relate to the `base` keys.
@@ -137,18 +138,20 @@ export const toState$_ = <T>(init: T, reduce: ActionReducer<T>) => (action$: Act
  * interface TestNested { a?: number, b?: string, c?: boolean };
  * interface Test { a?: TestNested, b?: string };
  * const action$ = new Subject<Action<any>>();
- * const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
- * const state_parent$ = toState$(action$, <Test>{ a: null, b: 'parent' }, reducers_({ 'ActSetB': redSetPropertyIfNotSame_('b') }));
+ * const state_nested$ = toState$(action$, <TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
+ * const state_parent$ = toState$(action$, <Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') });
  * const state$ = assemble$(state_parent$, { 'a': state_nested$ });
  */
 export const assemble$ = <T extends object>(base: T | Observable<T>, parts?: { [K in keyof T]: (Observable<T[K]> | T[K]) }) => {
-  const base$ = isObservable(base) ? base : of(typeof base === 'object' ? base : <T>{});
-  const part$s = Object
-    .entries(parts || {})
-    .filter(([key]) => typeof key === 'string')
-    .map(([key, value]) => (isObservable(value) ? value : of(value)).pipe(map(_ => <T>{ [key]: _ })));
-  const parts$ = merge(...part$s).pipe(scan((acc, val) => Object.assign(<T>{}, acc || <T>{}, val || <T>{}), <T>{}));
-  return combineLatest(base$, parts$).pipe(map(([into, from]) => Object.assign(<T>{}, into, from)));
+  const toCombine = [isObservable(base) ? base : of(typeof base === 'object' ? base : <T>{})];
+  if (parts && Object.keys(parts).length) {
+    const part$s = Object
+      .entries(parts)
+      .filter(([key]) => typeof key === 'string')
+      .map(([key, value]) => (isObservable(value) ? value : of(value)).pipe(map(_ => <T>{ [key]: _ })));
+    toCombine.push(merge(...part$s).pipe(scan((acc, val) => Object.assign(<T>{}, acc || <T>{}, val || <T>{}), <T>{})));
+  }
+  return combineLatest(toCombine).pipe(map(([into, from]) => Object.assign(<T>{}, into, from)));
 }
 
 /**
@@ -157,8 +160,8 @@ export const assemble$ = <T extends object>(base: T | Observable<T>, parts?: { [
  * @example
  * interface TestNested { a?: number, b?: string, c?: boolean };
  * interface Test { a?: TestNested, b?: string };
- * const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, reducers_({ 'ActMerge': redMerge }));
- * const state_parent$_ = toState$_(<Test>{ a: null, b: 'parent' }, reducers_({ 'ActSetB': redSetPropertyIfNotSame_('b') }));
+ * const state_nested$_ = toState$_(<TestNested>{ a: 0, b: 'nested', c: false }, { 'ActMerge': redMerge });
+ * const state_parent$_ = toState$_(<Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') });
  * const state$_ = assemble$_(state_parent$_, { 'a': state_nested$_ });
  * ...
  * const state$ = state$_(action$);
@@ -170,8 +173,42 @@ export const assemble$_ = <T extends { [key: string]: any }>(base: T | StreamToS
     Object
       .entries(parts || {})
       .forEach(([key, value]) => _parts[key] = typeof value === 'function' ? (value as StreamToState<T>)(action$) : value);
-    return assemble$(_base, _parts);
+    return assemble$(_base, Object.keys(_parts).length ? _parts : null);
   }
+
+/**
+ * Creates a state Observable (from init object, reducers and nested parts) emitting new state from scanning the `action$` stream.
+ * @example
+ * interface TestNested { c?: number };
+ * interface Test { a?: TestNested, b?: string };
+ * const action$ = new Subject<Action<any>>();
+ * const state_nested$ = initReduceAssemble$(action$, <TestNested>{ c: 0 }, { 'ActSetC': redSetPropertyIfNotSame_('c') });
+ * const state$ = initReduceAssemble$(action$, <Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') }, { a: state_nested$ });
+ */
+export const initReduceAssemble$ = <T extends object>(
+  action$: ActionStream,
+  init: T,
+  reduce: ActionReducer<T> | ActionHandlerMap<T>,
+  parts?: { [K in keyof T]: (T[K] | Observable<T[K]>) },
+) =>
+  assemble$(toState$(action$, init, reduce), parts);
+
+/**
+ * Returns a creator for a state Observable (from init object, reducers and nested parts) emitting new state from scanning the `action$` stream.
+ * @example
+ * interface TestNested { c?: number };
+ * interface Test { a?: TestNested, b?: string };
+ * const state_nested$_ = initReduceAssemble$_(<TestNested>{ c: 0 }, { 'ActSetC': redSetPropertyIfNotSame_('c') });
+ * const state$_ = initReduceAssemble$_(<Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') }, { a: state_nested$_ });
+ * ...
+ * const state$ = state$_(action$);
+ */
+export const initReduceAssemble$_ = <T extends object>(
+  init: T,
+  reduce: ActionReducer<T> | ActionHandlerMap<T>,
+  parts?: { [K in keyof T]: (T[K] | StreamToState<T[K]>) },
+) =>
+  assemble$_(toState$_(init, reduce), parts);
 
 class StoreImpl<T> implements Store<T> {
   action$ = <ActionStream>null;

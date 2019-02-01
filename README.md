@@ -78,25 +78,22 @@ Using the interfaces and actors the states now can be created and assembled acco
 
 export const DEFAULT_FILTER = <ProductsFilter>{ brands: [], nameFilter: null, tags: {} };
 
-const state_filter$ = toState$_(
+const state_filter$ = initReduceAssemble$_(
   DEFAULT_FILTER,
-  reducers_(
-    {
-      [reset_filter.type]: redSet,
-      [set_filter_brands.type]: redSetPropertyIfNotEqual_('brands'),
-      [set_filter_nameFilter.type]: redSetPropertyIfNotSame_('nameFilter'),
-      [set_filter_tags.type]: redSetPropertyIfNotEqual_('tags'),
-    }));
+  {
+    [reset_filter.type]: redSet,
+    [set_filter_brands.type]: redSetPropertyIfNotEqual_('brands'),
+    [set_filter_nameFilter.type]: redSetPropertyIfNotSame_('nameFilter'),
+    [set_filter_tags.type]: redSetPropertyIfNotEqual_('tags'),
+  });
 
-const state_view$ = toState$_(
+export const state_view_products$ = initReduceAssemble$_(
   <StateViewProducts>{ filter: null, products: [], sortAsc: true },
-  reducers_(
-    {
-      [set_products.type]: redSetPropertyIfNotEqual_('products'),
-      [set_sortAsc.type]: redSetPropertyIfNotSame_('sortAsc'),
-    }));
-
-export const state_view_products$ = assemble$_(state_view$, { filter: state_filter$ });
+  {
+    [set_products.type]: redSetPropertyIfNotEqual_('products'),
+    [set_sortAsc.type]: redSetPropertyIfNotSame_('sortAsc'),
+  },
+  { filter: state_filter$ });
 ```
 
 And that's it - there is no more boilerplate code needed than that. Furthermore most parts are typesafe i.e. `redSetPropertyIfNotSame_` will check for the field name to actually be a key of the state type.
@@ -106,22 +103,15 @@ The assembled `state_view_products$` must now be assembled in the whatever paren
 ```typescript
 import { state_view_products$ } from './state-products';
 
+// top state
 export interface UiState {
-  ...
   viewProducts?: StateViewProducts,
-  ...
 }
 
-export const state_ui$ = assemble$_(
-  <UiState>{
-    ...
-    viewProducts: null,
-    ...
-  }, {
-    ...
-    viewProducts: state_view_products$,
-    ...
-  });
+export const state_ui$ = initReduceAssemble$_(
+  <UiState>{ viewProducts: null },
+  null, // no own reducers
+  { viewProducts: state_view_products$ });
 ```
 
 ### Define `RxState`
@@ -247,9 +237,10 @@ The process to initialize the state is kept in line with the Redux approach:
 ```typescript
 // Create/Assemble some state:
 export interface State { ... }
-export const state$ = assemble$_(
-  <State>{ ... },
-  { ... });
+export const state$ = initReduceAssemble$_(
+  <State>{ ... }, // init
+  { ... }, // reducers
+  { ... }); // nested states
 
 // Create the injector and factory:
 export const AppRxStore = new InjectionToken('App.store.rx');
@@ -338,24 +329,19 @@ export class OAuthData {
   active: boolean;
 }
 
-export const set_oauth_name = actor<string>('SET', 'USER', 'oauth', 'active');
+export const set_oauth_name = actor<string>('SET_USER_oauth_active');
 
-export const state_oauth$ = toState$_(
-  <OAuthData>{
-    active: false,
-  },
-  reducers_({
-    [set_oauth_active.type]: redSetPropertyIfNotSame_('active'),
-  }));
+export const state_oauth$ = initReduceAssemble$_(
+  <OAuthData>{ active: false },
+  { [set_oauth_active.type]: redSetPropertyIfNotSame_('active') });
 
 // Create a service just for mutating the UserInfo state
 
 @Injectable({ providedIn: 'root' })
 export class RxStateSetUserInfoService {
   constructor(private readonly rxState: RxStateService) { }
-  ...
+
   setOauthActive = this.rxState.act_(set_oauth_active, forceBool);
-  ...
 }
 
 // Inject the mutator wherever UserInfo needs to be changed
