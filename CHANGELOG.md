@@ -1,4 +1,4 @@
-### _1.0.3_
+### _1.0.4_
 
 - _update_ **dependencies:** updated all dependencies and code conventions
 
