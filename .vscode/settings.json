@@ -1,25 +1,23 @@
+// Place your settings in this file to overwrite default and user settings.
 {
   "files.exclude": {
-    "**/.git": true,
-    "**/.svn": true,
-    "**/.hg": true,
-    "**/CVS": true,
     "**/.DS_Store": true,
-    "**/dist": true,
-    "**/coverage": true,
+    "**/.git": true,
+    "**/.hg": true,
+    "**/.svn": true,
+    "**/.vscode": true,
+    "**/CVS": true,
     "**/*.bak": true
   },
   "editor.detectIndentation": false,
   "editor.formatOnSave": true,
   "editor.tabSize": 2,
   "editor.insertSpaces": true,
-  "[typescript]": {
-    "editor.codeActionsOnSave": {
-      "source.organizeImports": true
-    }
-  },
-  "typescript.preferences.importModuleSpecifier": "non-relative",
-  "typescript.preferences.quoteStyle": "single",
+  "html.format.wrapLineLength": 140,
+  "editor.rulers": [140],
   "typescript.tsdk": "node_modules\\typescript\\lib",
-  "typescript.format.insertSpaceAfterFunctionKeywordForAnonymousFunctions": false,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }

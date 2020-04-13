@@ -1,32 +1,32 @@
-import { BehaviorSubject, combineLatest, isObservable, merge, Observable, of, Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, map, scan, takeUntil } from 'rxjs/operators';
+import {BehaviorSubject, combineLatest, isObservable, merge, Observable, of, Subject} from 'rxjs';
+import {debounceTime, distinctUntilChanged, map, scan, takeUntil} from 'rxjs/operators';
 
 export interface Action<T> {
-  /** Make sure that the type is globally unique. */
-  type: string,
-  value: T,
+  /** Make sure that the `type` is globally unique. */
+  type: string;
+  value: T;
 }
 
 export type ActionStream = Observable<Action<any>>;
 export type ActionReducer<T> = (state: T, action: Action<any>) => T;
-export type ValueReducer<T> = (state: T, value: any) => T;
+export type ValueReducer<T, A = any> = (state: T, value: A) => T;
 export type StreamToState<T> = (action$: ActionStream) => Observable<T>;
 
-export interface ActionHandlerMap<T> { [key: string]: ValueReducer<T> };
+export type ActionHandlerMap<T> = Record<string, ValueReducer<T>>;
 
 /** Wrapper for creating `Action<T>`s. */
 export interface Actor<T> {
-  type: string,
-  new: (value: T) => Action<T>,
+  type: string;
+  new: (value: T) => Action<T>;
 }
 
 /** Similar to Redux store. */
 export interface Store<T> {
-  action$: ActionStream,
-  state$: Observable<T>,
-  getState(): T,
-  dispatch(action: Action<any>): void,
-  destruct(): void,
+  action$: ActionStream;
+  state$: Observable<T>;
+  getState(): T;
+  dispatch(action: Action<any>): void;
+  destruct(): void;
 }
 
 /** Helper: testing content equality. */
@@ -48,37 +48,42 @@ export const orZero = (val: number) => val || 0;
 
 /** Sets `state[key] = value` if not identical and returns as new state. */
 export const setPropertyIfNotSame = <T extends object, K extends keyof T>(state: T, key: K, value: T[K]): T =>
-  !state || state[key] === value ? state : Object.assign({}, state, { [key]: value });
+  !state || state[key] === value ? state : Object.assign({}, state, {[key]: value});
+
 /** Returns a reducer based on `setPropertyIfNotSame`. */
-export const redSetPropertyIfNotSame_ = <T extends object, K extends keyof T>(key: K) =>
-  (state: T, value: T[K]) => setPropertyIfNotSame(state, key, value);
+export const redSetPropertyIfNotSame_ = <T extends object, K extends keyof T>(key: K): ValueReducer<T, T[K]> => (state, value) =>
+  setPropertyIfNotSame(state, key, value);
 
 /** Sets `state[key] = value` if not content-equal and returns as new state. */
 export const setPropertyIfNotEqual = <T extends object, K extends keyof T>(state: T, key: K, value: T[K]): T =>
-  !state || state[key] === value || jsonEqual(state[key], value) ? state : Object.assign({}, state, { [key]: value });
+  !state || state[key] === value || jsonEqual(state[key], value) ? state : Object.assign({}, state, {[key]: value});
+
 /** Returns a reducer based on `setPropertyIfNotEqual`. */
-export const redSetPropertyIfNotEqual_ = <T extends object, K extends keyof T>(key: K) =>
-  (state: T, value: T[K]) => setPropertyIfNotEqual(state, key, value);
+export const redSetPropertyIfNotEqual_ = <T extends object, K extends keyof T>(key: K): ValueReducer<T, T[K]> => (state, value) =>
+  setPropertyIfNotEqual(state, key, value);
 
 /** Reducer for setting `value` as new state. */
 export const redSet = <T extends object>(state: T, value: T) => value;
+
 /** Reducer for merging `value` into `state` as new state. */
-export const redMerge = <T extends { [key: string]: any }>(state: T, value: T): T => {
+export const redMerge = <T extends object>(state: T, value: T): T => {
   state = state || <T>{};
   value = value || <T>{};
-  const ret = typeof state === 'object' && typeof value === 'object' && Object.entries(value).every(([key, val]) => state[key] === val) ? state
-    : Object.assign({} as T, state || {}, value || {});
+  const ret =
+    typeof state === 'object' && typeof value === 'object' && Object.entries(value).every(([key, val]) => state[key] === val)
+      ? state
+      : Object.assign({} as T, state, value);
   return ret;
-}
+};
 
 /** Returns a reducer which merges the `value` into the `state[key]` as new state. */
-export const redMergeProperty_ = <T extends object, K extends keyof T>(key: K) => (state: T, value: T[K]): T => {
+export const redMergeProperty_ = <T extends object, K extends keyof T>(key: K): ValueReducer<T, T[K]> => (state, value) => {
   state = state || <T>{};
-  const nested = state[key] as any as object;
-  const merged = redMerge(nested, value as any as object);
-  const ret = nested === merged ? state : Object.assign({}, state, { [key]: merged });
+  const nested = (state[key] as any) as object;
+  const merged = redMerge(nested, (value as any) as object);
+  const ret = nested === merged ? state : Object.assign({}, state, {[key]: merged});
   return ret;
-}
+};
 
 /**
  * Returns a reducer built from a map of `Action` handlers.
@@ -91,8 +96,8 @@ export const redMergeProperty_ = <T extends object, K extends keyof T>(key: K) =
  *   [act_set_c.type]: redSetPropertyIfNotSame_('c'),
  * });
  */
-export const reducers_ = <T>(actionTypeToHandler: ActionHandlerMap<T>): ActionReducer<T> =>
-  (state, action) => actionTypeToHandler && action.type in actionTypeToHandler ? actionTypeToHandler[action.type](state, action.value) : state;
+export const reducers_ = <T>(actionTypeToHandler: ActionHandlerMap<T>): ActionReducer<T> => (state, action) =>
+  actionTypeToHandler && action.type in actionTypeToHandler ? actionTypeToHandler[action.type](state, action.value) : state;
 
 /**
  * Creates an `Actor` with type concatenated from the `type: string[]` parameter.
@@ -107,8 +112,8 @@ export const reducers_ = <T>(actionTypeToHandler: ActionHandlerMap<T>): ActionRe
  */
 export const actor = <T>(...type: string[]) => {
   const _type = (type || ['???']).join('_');
-  return <Actor<T>>{ type: _type, new: (value: T) => <Action<T>>{ type: _type, value } };
-}
+  return <Actor<T>>{type: _type, new: (value: T) => <Action<T>>{type: _type, value}};
+};
 
 /**
  * Creates a state Observable emitting new state from scanning the `action$` stream.
@@ -118,8 +123,7 @@ export const actor = <T>(...type: string[]) => {
  * const state$ = toState$(action$, <Test>{ a: 0, b: '', c: false }, { 'ActMerge': redMerge });
  */
 export const toState$ = <T>(action$: ActionStream, init: T, reduce: ActionReducer<T> | ActionHandlerMap<T>) =>
-  merge(of(init), action$.pipe(scan(typeof reduce === 'function' ? reduce : reducers_(reduce), init)))
-    .pipe(distinctUntilChanged());
+  merge(of(init), action$.pipe(scan(typeof reduce === 'function' ? reduce : reducers_(reduce), init))).pipe(distinctUntilChanged());
 
 /**
  * Returns a creator for a state Observable emitting new state from scanning the `action$` stream.
@@ -129,7 +133,8 @@ export const toState$ = <T>(action$: ActionStream, init: T, reduce: ActionReduce
  * ...
  * const state$ = state$_(action$);
  */
-export const toState$_ = <T>(init: T, reduce: ActionReducer<T> | ActionHandlerMap<T>) => (action$: ActionStream) => toState$(action$, init, reduce);
+export const toState$_ = <T>(init: T, reduce: ActionReducer<T> | ActionHandlerMap<T>) => (action$: ActionStream) =>
+  toState$(action$, init, reduce);
 
 /**
  * Assembles a state Observable emitting new state from combining a `base` object or Observable and `parts` values or Observables which relate to the `base` keys.
@@ -142,20 +147,20 @@ export const toState$_ = <T>(init: T, reduce: ActionReducer<T> | ActionHandlerMa
  * const state_parent$ = toState$(action$, <Test>{ a: null, b: 'parent' }, { 'ActSetB': redSetPropertyIfNotSame_('b') });
  * const state$ = assemble$(state_parent$, { 'a': state_nested$ });
  */
-export const assemble$ = <T extends object>(base: T | Observable<T>, parts?: { [K in keyof T]: (Observable<T[K]> | T[K]) }) => {
+export const assemble$ = <T extends object>(base: T | Observable<T>, parts?: Partial<{[K in keyof T]: Observable<T[K]> | T[K]}>) => {
   const toCombine = [isObservable(base) ? base : of(typeof base === 'object' ? base : <T>{})];
   if (parts && Object.keys(parts).length) {
-    const part$s = Object
-      .entries(parts)
+    const part$s = Object.entries(parts)
       .filter(([key]) => typeof key === 'string')
-      .map(([key, value]) => (isObservable(value) ? value : of(value)).pipe(map(_ => <T>{ [key]: _ })));
+      .map(([key, value]) => (isObservable(value) ? value : of(value)).pipe(map((_) => <T>{[key]: _})));
     toCombine.push(merge(...part$s).pipe(scan((acc, val) => Object.assign(<T>{}, acc || <T>{}, val || <T>{}), <T>{})));
   }
   return combineLatest(toCombine).pipe(map(([into, from]) => Object.assign(<T>{}, into, from)));
-}
+};
 
 /**
- * Returns a creator for assembling a state Observable emitting new state from combining a `base` object or Observable and `parts` values or Observables which relate to the `base` keys.
+ * Returns a creator for assembling a state Observable emitting new state from combining a `base` object or Observable and `parts` values
+ * or Observables which relate to the `base` keys.
  * *WARNING: a nested state from `parts` should not be reduced in the `base` if the `base` is an Observable.*
  * @example
  * interface TestNested { a?: number, b?: string, c?: boolean };
@@ -166,15 +171,19 @@ export const assemble$ = <T extends object>(base: T | Observable<T>, parts?: { [
  * ...
  * const state$ = state$_(action$);
  */
-export const assemble$_ = <T extends { [key: string]: any }>(base: T | StreamToState<T>, parts?: { [K in keyof T]: (T[K] | StreamToState<T[K]>) }) =>
-  (action$: ActionStream) => {
-    const _base = typeof base === 'function' ? (base as StreamToState<T>)(action$) : base;
-    const _parts = <{ [K in keyof T]: (Observable<T[K]> | T[K]) }>{};
-    Object
-      .entries(parts || {})
-      .forEach(([key, value]) => _parts[key] = typeof value === 'function' ? (value as StreamToState<T>)(action$) : value);
-    return assemble$(_base, Object.keys(_parts).length ? _parts : null);
-  }
+export const assemble$_ = <T extends object>(base: T | StreamToState<T>, parts?: {[K in keyof T]: T[K] | StreamToState<T[K]>}) => (
+  action$: ActionStream,
+) => {
+  const assembleBase = typeof base === 'function' ? (base as StreamToState<T>)(action$) : base;
+  const assembleParts =
+    !parts || !Object.keys(parts).length
+      ? null
+      : Object.entries(parts || {}).reduce<Partial<{[K in keyof T]: Observable<T[K]> | T[K]}>>(
+          (acc, [key, value]) => Object.assign(acc, {[key]: typeof value === 'function' ? (value as StreamToState<T>)(action$) : value}),
+          {},
+        );
+  return assemble$(assembleBase, assembleParts);
+};
 
 /**
  * Creates a state Observable (from init object, reducers and nested parts) emitting new state from scanning the `action$` stream.
@@ -189,9 +198,8 @@ export const initReduceAssemble$ = <T extends object>(
   action$: ActionStream,
   init: T,
   reduce: ActionReducer<T> | ActionHandlerMap<T>,
-  parts?: { [K in keyof T]: (T[K] | Observable<T[K]>) },
-) =>
-  assemble$(toState$(action$, init, reduce), parts);
+  parts?: {[K in keyof T]: T[K] | Observable<T[K]>},
+) => assemble$(toState$(action$, init, reduce), parts);
 
 /**
  * Returns a creator for a state Observable (from init object, reducers and nested parts) emitting new state from scanning the `action$` stream.
@@ -206,33 +214,30 @@ export const initReduceAssemble$ = <T extends object>(
 export const initReduceAssemble$_ = <T extends object>(
   init: T,
   reduce: ActionReducer<T> | ActionHandlerMap<T>,
-  parts?: { [K in keyof T]: (T[K] | StreamToState<T[K]>) },
-) =>
-  assemble$_(toState$_(init, reduce), parts);
+  parts?: {[K in keyof T]: T[K] | StreamToState<T[K]>},
+) => assemble$_(toState$_(init, reduce), parts);
 
 class StoreImpl<T> implements Store<T> {
-  action$ = <ActionStream>null;
-  state$ = <Observable<T>>null;
-  private _action$ = <Subject<Action<any>>>null;
-  private _state = <T>null;
-
-  constructor(createState: StreamToState<T>) {
-    this._action$ = new Subject<Action<any>>();
-    this.action$ = this._action$.pipe(map(_ => <Action<any>>{ ..._ }));
-    this.state$ = createState(this._action$);
-    this.state$.subscribe(state => this._state = state);
+  constructor(private readonly createState: StreamToState<T>) {
+    this.state$.subscribe((state) => (this.state = state));
   }
 
+  private state: T = null;
+  private readonly actionIn$ = new Subject<Action<any>>();
+
+  public readonly action$ = this.actionIn$.pipe(map((action) => <Action<any>>{...action}));
+  public readonly state$ = this.createState(this.actionIn$);
+
   getState() {
-    return this._state;
+    return this.state;
   }
 
   dispatch(action: Action<any>) {
-    this._action$.next(action);
+    this.actionIn$.next(action);
   }
 
   destruct() {
-    this._action$.complete();
+    this.actionIn$.complete();
   }
 }
 
@@ -248,7 +253,7 @@ export const createStore = <T>(createState: StreamToState<T>) => new StoreImpl(c
 type RxGetter<S, T> = (state: S) => T;
 
 interface RxWatcher<S, T> {
-  blocker: Array<Subject<any>>;
+  blocker: Subject<any>[];
   getter: RxGetter<S, T>;
   notify: BehaviorSubject<T>;
 }
@@ -270,21 +275,21 @@ interface RxWatcher<S, T> {
  */
 export class RxState<S> {
   protected readonly DEBOUNCE_CHECK_WATCHERS_MS = 100;
-  protected readonly watchers = <Array<RxWatcher<S, any>>>[];
+  protected readonly watchers = <RxWatcher<S, any>[]>[];
   private readonly _done$ = new Subject();
   private readonly _state$ = <BehaviorSubject<S>>null;
   private readonly _triggerCheckWatchers$ = new Subject();
-  private _blockers = <Array<Subject<any>>>[];
+  private _blockers = <Subject<any>[]>[];
 
   constructor(protected readonly store: Store<S>) {
     this._triggerCheckWatchers$.pipe(debounceTime(this.DEBOUNCE_CHECK_WATCHERS_MS), takeUntil(this._done$)).subscribe(this.checkWatchers);
     this._state$ = new BehaviorSubject(store.getState());
-    store.state$.pipe(takeUntil(this._done$)).subscribe(_ => this._state$.next(_));
+    store.state$.pipe(takeUntil(this._done$)).subscribe((_) => this._state$.next(_));
     this._state$.subscribe(() => {
-      this.watchers.forEach(ii => {
+      this.watchers.forEach((ii) => {
         const val = this.applyGetter(ii.getter);
         const isObject = typeof val === 'object' && typeof ii.notify.value === 'object';
-        if (isObject && !jsonEqual(val, ii.notify.value) || !isObject && val !== ii.notify.value) {
+        if ((isObject && !jsonEqual(val, ii.notify.value)) || (!isObject && val !== ii.notify.value)) {
           ii.notify.next(val);
         }
       });
@@ -292,12 +297,14 @@ export class RxState<S> {
     });
   }
 
-  get state() { return this._state$.value; }
+  get state() {
+    return this._state$.value;
+  }
 
   destroy() {
     this._state$.complete();
     this._done$.next();
-    [this._done$, this._triggerCheckWatchers$, ...this.watchers.map(ii => ii.notify)].forEach(ii => ii.complete());
+    [this._done$, this._triggerCheckWatchers$, ...this.watchers.map((ii) => ii.notify)].forEach((ii) => ii.complete());
     this.store.destruct();
   }
 
@@ -341,34 +348,32 @@ export class RxState<S> {
    * }
    */
   watch = <T>(getter: RxGetter<S, T>, until?: Subject<any>) => {
-    let watcher = this.watchers.find(ii => ii.getter === getter || ii.getter.toString() === getter.toString());
+    let watcher = this.watchers.find((ii) => ii.getter === getter || ii.getter.toString() === getter.toString());
     if (!watcher) {
-      watcher = { getter, notify: new BehaviorSubject(this.applyGetter(getter)), blocker: [] };
+      watcher = {getter, notify: new BehaviorSubject(this.applyGetter(getter)), blocker: []};
       this.watchers.push(watcher);
     }
     if (until && !until.isStopped && !watcher.blocker.includes(until)) {
       watcher.blocker = [...watcher.blocker, until];
       if (!this._blockers.includes(until)) {
         this._blockers = [...this._blockers, until];
-        until
-          .pipe(takeUntil(until), takeUntil(this._done$))
-          .subscribe(null, null, () => {
-            this._blockers = this._blockers.filter(_ => _ !== until);
-            this._triggerCheckWatchers$.next();
-          });
+        until.pipe(takeUntil(until), takeUntil(this._done$)).subscribe(null, null, () => {
+          this._blockers = this._blockers.filter((_) => _ !== until);
+          this._triggerCheckWatchers$.next();
+        });
       }
     }
     return watcher.notify as BehaviorSubject<T>;
-  }
+  };
 
   private checkWatchers = () => {
     for (let ii = this.watchers.length - 1; ii >= 0; --ii) {
-      this.watchers[ii].blocker = this.watchers[ii].blocker.filter(_ => !_.isStopped && this._blockers.includes(_));
+      this.watchers[ii].blocker = this.watchers[ii].blocker.filter((_) => !_.isStopped && this._blockers.includes(_));
       if (!this.watchers[ii].notify.observers.length && !this.watchers[ii].blocker.length) {
-        [...this.watchers.splice(ii, 1).map(ww => ww.notify)].forEach(jj => jj.complete());
+        [...this.watchers.splice(ii, 1).map((ww) => ww.notify)].forEach((jj) => jj.complete());
       }
     }
-  }
+  };
 
   private applyGetter = <T>(getter: RxGetter<S, T>) => {
     let ret: T = null;
@@ -378,5 +383,5 @@ export class RxState<S> {
       // ignore
     }
     return ret;
-  }
+  };
 }
