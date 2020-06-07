@@ -1,5 +1,5 @@
-import {BehaviorSubject, combineLatest, isObservable, merge, Observable, of, Subject} from 'rxjs';
-import {debounceTime, distinctUntilChanged, map, scan, takeUntil} from 'rxjs/operators';
+import {BehaviorSubject, combineLatest, isObservable, merge, Observable, of, OperatorFunction, Subject} from 'rxjs';
+import {distinctUntilChanged, map, scan, shareReplay, takeUntil, startWith} from 'rxjs/operators';
 
 export interface Action<T> {
   /** Make sure that the `type` is globally unique. */
@@ -250,12 +250,20 @@ class StoreImpl<T> implements Store<T> {
  */
 export const createStore = <T>(createState: StreamToState<T>) => new StoreImpl(createState);
 
-type RxGetter<S, T> = (state: S) => T;
-
-interface RxWatcher<S, T> {
-  blocker: Subject<any>[];
-  getter: RxGetter<S, T>;
-  notify: BehaviorSubject<T>;
+/**
+ * Helper function for watching substates.
+ *
+ * @param selector mapper function e.g. `st => st.ui.enabled`
+ *
+ * @example
+ * enabled$ = this.stateService.state$.pipe(watch(st => st.ui.enabled));
+ */
+export function watch<T, R>(selector: (state: T) => R): OperatorFunction<T, R> {
+  return (source: Observable<T>) =>
+    source.pipe(
+      map((st) => selector(st)),
+      distinctUntilChanged(),
+    );
 }
 
 /**
@@ -269,51 +277,33 @@ interface RxWatcher<S, T> {
  * const rxState = new RxState(store);
  * const act_set_locale = rxState.act_(set_locale);
  * ...
- * rxState.watch(state => state.ui.global.locale).pipe(takeUntil(done$)).subscribe(locale => console.log('Locale changed to ' + locale));
+ * rxState.state$.pipe(select(st => st.ui.global.locale)).subscribe(locale => console.log('Locale changed to ' + locale));
  * ...
  * act_set_locale('en_US');
  */
 export class RxState<S> {
-  protected readonly DEBOUNCE_CHECK_WATCHERS_MS = 100;
-  protected readonly watchers = <RxWatcher<S, any>[]>[];
-  private readonly _done$ = new Subject();
-  private readonly _state$ = <BehaviorSubject<S>>null;
-  private readonly _triggerCheckWatchers$ = new Subject();
-  private _blockers = <Subject<any>[]>[];
-
   constructor(protected readonly store: Store<S>) {
-    this._triggerCheckWatchers$.pipe(debounceTime(this.DEBOUNCE_CHECK_WATCHERS_MS), takeUntil(this._done$)).subscribe(this.checkWatchers);
-    this._state$ = new BehaviorSubject(store.getState());
-    store.state$.pipe(takeUntil(this._done$)).subscribe((_) => this._state$.next(_));
-    this._state$.subscribe(() => {
-      this.watchers.forEach((ii) => {
-        const val = this.applyGetter(ii.getter);
-        const isObject = typeof val === 'object' && typeof ii.notify.value === 'object';
-        if ((isObject && !jsonEqual(val, ii.notify.value)) || (!isObject && val !== ii.notify.value)) {
-          ii.notify.next(val);
-        }
-      });
-      this._triggerCheckWatchers$.next();
-    });
+    store.state$.pipe(startWith(store.getState()), takeUntil(this.done$)).subscribe((state) => this.currentState$.next(state));
   }
 
-  get state() {
-    return this._state$.value;
-  }
+  private readonly done$ = new Subject();
+  private readonly currentState$ = new BehaviorSubject<S>(null);
+
+  /** Reactive state (use with `.pipe(select(...))` operator) */
+  public readonly state$ = this.currentState$.pipe(shareReplay({refCount: true, bufferSize: 1}), takeUntil(this.done$));
+
+  /** Synchronized state value. */
+  getState = () => this.currentState$.value;
 
   destroy() {
-    this._state$.complete();
-    this._done$.next();
-    [this._done$, this._triggerCheckWatchers$, ...this.watchers.map((ii) => ii.notify)].forEach((ii) => ii.complete());
+    this.currentState$.complete();
+    this.done$.next();
+    this.done$.complete();
     this.store.destruct();
   }
 
   /** For debugging/testing. */
-  dbgGetCheckWatchersMs = () => this.DEBOUNCE_CHECK_WATCHERS_MS;
-  /** For debugging/testing. */
   dbgGetStore = () => this.store;
-  /** For debugging/testing. */
-  dbgGetWatchers = () => this.watchers.length;
 
   /**
    * Dispatch an `Action` using an `Actor`, typesafe value and optionally a pre-`transform` function.
@@ -334,54 +324,4 @@ export class RxState<S> {
    * act_set_locale(newCurrentLocale);
    */
   act_ = <T>(act: Actor<T>, transform?: (val: T) => T) => (value: T) => this.act(act, value, transform);
-
-  /**
-   * Watch the state for changes.
-   * *WARNING: the watcher function should only use it's parameters and const values.*
-   * FYI: a watcher is reused internally until there are no more subscribers AND optional `until` fired at least once.
-   * @example
-   * class LocaleComponent {
-   * constructor(private readonly rxState: RxState<MyState>){}
-   * private readonly done$ = new Subject();
-   * readonly locale$ = this.rxState.watch(state => state.ui.global.locale, done$);
-   * destroy() { done$.next(); done$.complete(); }
-   * }
-   */
-  watch = <T>(getter: RxGetter<S, T>, until?: Subject<any>) => {
-    let watcher = this.watchers.find((ii) => ii.getter === getter || ii.getter.toString() === getter.toString());
-    if (!watcher) {
-      watcher = {getter, notify: new BehaviorSubject(this.applyGetter(getter)), blocker: []};
-      this.watchers.push(watcher);
-    }
-    if (until && !until.isStopped && !watcher.blocker.includes(until)) {
-      watcher.blocker = [...watcher.blocker, until];
-      if (!this._blockers.includes(until)) {
-        this._blockers = [...this._blockers, until];
-        until.pipe(takeUntil(until), takeUntil(this._done$)).subscribe(null, null, () => {
-          this._blockers = this._blockers.filter((_) => _ !== until);
-          this._triggerCheckWatchers$.next();
-        });
-      }
-    }
-    return watcher.notify as BehaviorSubject<T>;
-  };
-
-  private checkWatchers = () => {
-    for (let ii = this.watchers.length - 1; ii >= 0; --ii) {
-      this.watchers[ii].blocker = this.watchers[ii].blocker.filter((_) => !_.isStopped && this._blockers.includes(_));
-      if (!this.watchers[ii].notify.observers.length && !this.watchers[ii].blocker.length) {
-        [...this.watchers.splice(ii, 1).map((ww) => ww.notify)].forEach((jj) => jj.complete());
-      }
-    }
-  };
-
-  private applyGetter = <T>(getter: RxGetter<S, T>) => {
-    let ret: T = null;
-    try {
-      ret = getter(this.state);
-    } catch {
-      // ignore
-    }
-    return ret;
-  };
 }

@@ -5,7 +5,7 @@
     "npm publish": "publish to npm"
   },
   "name": "dd-rx-state",
-  "version": "1.0.6",
+  "version": "1.1.0",
   "description": "Redux-like state handling, but created with rxjs and allowing for less but typesafe boilerplate with typescript.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

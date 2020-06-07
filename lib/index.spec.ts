@@ -1,5 +1,5 @@
-import {Subject, timer} from 'rxjs';
-import {take, takeUntil} from 'rxjs/operators';
+import {BehaviorSubject, Subject, timer} from 'rxjs';
+import {take} from 'rxjs/operators';
 import {
   Action,
   actor,
@@ -27,6 +27,7 @@ import {
   setPropertyIfNotSame,
   toState$,
   toState$_,
+  watch,
 } from './index';
 
 describe('rx state', () => {
@@ -486,42 +487,47 @@ describe('rx state', () => {
     const act_set_e = rxState.act_(set_e);
 
     const done$ = new Subject();
-    expect(rxState.dbgGetWatchers()).toBe(0);
 
     let state_e = <string>null;
-    rxState
-      .watch((state) => state.d.e, done$)
-      .pipe(takeUntil(done$))
-      .subscribe((_) => (state_e = _));
-    expect(rxState.dbgGetWatchers()).toBe(1);
+    rxState.state$.pipe(watch((state) => state.d.e)).subscribe((_) => (state_e = _));
 
-    expect(rxState.state).toEqual({a: 0, b: '', c: false, d: {e: ''}});
+    expect(rxState.getState()).toEqual({a: 0, b: '', c: false, d: {e: ''}});
     expect(state_e).toBe('');
 
     act_set_a(1);
-    expect(rxState.state).toEqual({a: 1, b: '', c: false, d: {e: ''}});
+    expect(rxState.getState()).toEqual({a: 1, b: '', c: false, d: {e: ''}});
     expect(state_e).toBe('');
 
     act_set_b('yep');
-    expect(rxState.state).toEqual({a: 1, b: 'yep', c: false, d: {e: ''}});
+    expect(rxState.getState()).toEqual({a: 1, b: 'yep', c: false, d: {e: ''}});
     expect(state_e).toBe('');
 
     act_set_c(true);
-    expect(rxState.state).toEqual({a: 1, b: 'yep', c: true, d: {e: ''}});
+    expect(rxState.getState()).toEqual({a: 1, b: 'yep', c: true, d: {e: ''}});
     expect(state_e).toBe('');
 
     act_set_e('nested');
-    expect(rxState.state).toEqual({a: 1, b: 'yep', c: true, d: {e: 'nested'}});
+    expect(rxState.getState()).toEqual({a: 1, b: 'yep', c: true, d: {e: 'nested'}});
     expect(state_e).toBe('nested');
 
     done$.next();
     done$.complete();
-    timer(rxState.dbgGetCheckWatchersMs() + 100)
+    timer(10)
       .pipe(take(1))
       .subscribe(() => {
-        expect(rxState.dbgGetWatchers()).toBe(0);
         rxState.destroy();
         done();
       });
+  });
+
+  test('watch', () => {
+    const state$ = new BehaviorSubject({a: {b: 1}});
+    const results = [];
+    state$.pipe(watch((st) => st.a.b)).subscribe((ii) => results.push(ii));
+    state$.next(state$.value);
+    state$.next({a: state$.value.a});
+    state$.next({a: {b: 2}});
+    state$.complete();
+    expect(results).toEqual([1, 2]);
   });
 });

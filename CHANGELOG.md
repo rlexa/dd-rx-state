@@ -1,3 +1,8 @@
+### _1.1.0_
+
+- _breaking change_ **RxState:** replaced `state` getter with `getState()` function
+- _breaking change_ **RxState:** replaced `watch()` method with `watch` rx operator
+
 ### _1.0.6_
 
 - _update_ **dependencies:** updated all dependencies and code conventions

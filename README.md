@@ -8,7 +8,7 @@ Redux-like state handling, but created with rxjs and allowing for less but types
 
 ## Info <a name="Info"></a>
 
-*Note: for Angular developers check out [quickstart section](#Angular_Quickstart) further below.*
+_Note: for Angular developers check out [quickstart section](#Angular_Quickstart) further below._
 
 Same as with Redux the global state needs to be identified and then built using actions (with unique names i.e. `type`s) and state reducers (functions which take the current state and an action and return either the same state if nothing changed or the mutated copy). The difference is that the state assembling results in an Observable stream of the state and that for static type safety the use of `Actor` is encouraged over the use of `Action` (though it is also possible to dispatch the actions directly in the store).
 
@@ -19,6 +19,7 @@ Task: a part of an UI client needs to filter, sort and show e.g. names of produc
 ### Identify State
 
 Following parts are needed:
+
 - the products are shown as list of names
 - the list can be sorted
 - the list can be filtered by:
@@ -28,15 +29,15 @@ Following parts are needed:
 
 ```typescript
 interface ProductsFilter {
-  brands?: string[],
-  nameFilter?: string,
-  tags?: { [key: string]: string },
+  brands?: string[];
+  nameFilter?: string;
+  tags?: {[key: string]: string};
 }
 
 export interface StateViewProducts {
-  filter?: ProductsFilter,
-  products?: string[],
-  sortAsc?: boolean,
+  filter?: ProductsFilter;
+  products?: string[];
+  sortAsc?: boolean;
 }
 ```
 
@@ -47,7 +48,7 @@ Identifying the actions/actors is pretty easy now that the state is clear.
 Keep in mind that the `Action.type` must be unique for all actions (same as in Redux), so let's create an interfix to be used in the current state's actions to prevent accidental repeating of types.
 
 ```typescript
-import { STATETAG as PARENT_STATETAG } from './state';
+import {STATETAG as PARENT_STATETAG} from './state';
 
 // ... state interfaces ...
 
@@ -58,7 +59,7 @@ const STATETAG = PARENT_STATETAG + '_PRODUCTS';
 export const reset_filter = actor<ProductsFilter>('RESET', STATETAG, 'filter');
 export const set_filter_brands = actor<string[]>('SET', STATETAG, 'filter', 'brands');
 export const set_filter_nameFilter = actor<string>('SET', STATETAG, 'filter', 'nameFilter');
-export const set_filter_tags = actor<{ [key: string]: string }>('SET', STATETAG, 'filter', 'tags');
+export const set_filter_tags = actor<{[key: string]: string}>('SET', STATETAG, 'filter', 'tags');
 
 // and actors for StateViewProducts
 export const set_products = actor<string[]>('SET', STATETAG, 'products');
@@ -72,28 +73,26 @@ Notice how the `StateViewProducts.filter` property does not have an actor - this
 Using the interfaces and actors the states now can be created and assembled accordingly.
 
 ```typescript
-
 // ... state interfaces ...
 // ... actors ...
 
-export const DEFAULT_FILTER = <ProductsFilter>{ brands: [], nameFilter: null, tags: {} };
+export const DEFAULT_FILTER = <ProductsFilter>{brands: [], nameFilter: null, tags: {}};
 
-const state_filter$ = initReduceAssemble$_(
-  DEFAULT_FILTER,
-  {
-    [reset_filter.type]: redSet,
-    [set_filter_brands.type]: redSetPropertyIfNotEqual_('brands'),
-    [set_filter_nameFilter.type]: redSetPropertyIfNotSame_('nameFilter'),
-    [set_filter_tags.type]: redSetPropertyIfNotEqual_('tags'),
-  });
+const state_filter$ = initReduceAssemble$_(DEFAULT_FILTER, {
+  [reset_filter.type]: redSet,
+  [set_filter_brands.type]: redSetPropertyIfNotEqual_('brands'),
+  [set_filter_nameFilter.type]: redSetPropertyIfNotSame_('nameFilter'),
+  [set_filter_tags.type]: redSetPropertyIfNotEqual_('tags'),
+});
 
 export const state_view_products$ = initReduceAssemble$_(
-  <StateViewProducts>{ filter: null, products: [], sortAsc: true },
+  <StateViewProducts>{filter: null, products: [], sortAsc: true},
   {
     [set_products.type]: redSetPropertyIfNotEqual_('products'),
     [set_sortAsc.type]: redSetPropertyIfNotSame_('sortAsc'),
   },
-  { filter: state_filter$ });
+  {filter: state_filter$},
+);
 ```
 
 And that's it - there is no more boilerplate code needed than that. Furthermore most parts are typesafe i.e. `redSetPropertyIfNotSame_` will check for the field name to actually be a key of the state type.
@@ -101,17 +100,18 @@ And that's it - there is no more boilerplate code needed than that. Furthermore 
 The assembled `state_view_products$` must now be assembled in the whatever parent state, for example:
 
 ```typescript
-import { state_view_products$ } from './state-products';
+import {state_view_products$} from './state-products';
 
 // top state
 export interface UiState {
-  viewProducts?: StateViewProducts,
+  viewProducts?: StateViewProducts;
 }
 
 export const state_ui$ = initReduceAssemble$_(
-  <UiState>{ viewProducts: null },
+  <UiState>{viewProducts: null},
   null, // no own reducers
-  { viewProducts: state_view_products$ });
+  {viewProducts: state_view_products$},
+);
 ```
 
 ### Define `RxState`
@@ -133,7 +133,7 @@ const rxState = new RxStateUi(createStore(state_ui$));
 
 Now two components are to be created: `ProductsFilterComponent` and `ViewProductsComponent`.
 
-*Note: following snippets are just samples due to unknown frontend framework.*
+_Note: following snippets are just samples due to unknown frontend framework._
 
 #### ProductsFilterComponent
 
@@ -141,16 +141,14 @@ This component presents and mutates the filter values and sorting.
 
 ```typescript
 export class ProductsFilterComponent {
-  constructor(private readonly rxState: RxStateUi) { }
-  
-  private readonly done$ = new Subject();
+  constructor(private readonly rxState: RxStateUi) {}
 
   // state observables - e.g. use with async in Angular HTML templates
 
-  readonly brands$ = this.rxState.watch(state => state.viewProducts.filter.brands, this.done$);
-  readonly nameFilter$ = this.rxState.watch(state => state.viewProducts.filter.nameFilter, this.done$);
-  readonly tags$ = this.rxState.watch(state => state.viewProducts.filter.tags, this.done$);
-  readonly sortAsc$ = this.rxState.watch(state => state.viewProducts.sortAsc, this.done$);
+  readonly brands$ = this.rxState.pipe(watch((state) => state.viewProducts.filter.brands));
+  readonly nameFilter$ = this.rxState.pipe(watch((state) => state.viewProducts.filter.nameFilter));
+  readonly tags$ = this.rxState.pipe(watch((state) => state.viewProducts.filter.tags));
+  readonly sortAsc$ = this.rxState.pipe(watch((state) => state.viewProducts.sortAsc));
 
   // state mutators - called from HTML template
 
@@ -159,15 +157,10 @@ export class ProductsFilterComponent {
   setTags = this.rxState.act_(set_filter_tags, orObject);
   setSortAsc = this.rxState.act_(set_sortAsc, forceBool);
   resetFilter = () => this.rxState.act(reset_filter, DEFAULT_FILTER);
-
-  destroy() {
-    this.done$.next();
-    this.done$.complete();
-  }
 }
 ```
 
-*Note: in e.g. VS Code all the observables and setters show and expect the correct types.*
+_Note: in e.g. VS Code all the observables and setters show and expect the correct types._
 
 #### ViewProductsComponent
 
@@ -175,19 +168,19 @@ This component shows the products and reloads the result according to filter val
 
 ```typescript
 export class ViewProductsComponent {
-  constructor(private readonly rxState: RxStateUi, private readonly api: ProductsApi) { }
-  
+  constructor(private readonly rxState: RxStateUi, private readonly api: ProductsApi) {}
+
   private readonly done$ = new Subject();
 
   // state observables for reacting to
 
-  private readonly filter$ = this.rxState.watch(state => state.viewProducts.filter, this.done$);
-  private readonly sortAsc$ = this.rxState.watch(state => state.viewProducts.sortAsc, this.done$);
+  private readonly filter$ = this.rxState.pipe(watch((state) => state.viewProducts.filter));
+  private readonly sortAsc$ = this.rxState.pipe(watch((state) => state.viewProducts.sortAsc));
 
   // state observables - e.g. use with async in Angular HTML templates
 
-  readonly products$ = this.rxState.watch(state => state.viewProducts.products, this.done$);
-  
+  readonly products$ = this.rxState.pipe(watch((state) => state.viewProducts.products));
+
   // state mutators
 
   private setProducts = this.rxState.act_(set_products, orArray);
@@ -197,7 +190,8 @@ export class ViewProductsComponent {
       .pipe(
         debounceTime(0),
         switchMap(([filter, sortAsc]) => this.api.httpGetProducts$(filter, sortAsc)),
-        takeUntil(this.done$))
+        takeUntil(this.done$),
+      )
       .subscribe(this.setProducts);
   }
 
@@ -209,6 +203,7 @@ export class ViewProductsComponent {
 ```
 
 For not-rxjs-savvy developers; the `init()` function:
+
 - watches the latest values from filter and sorting with `combineLatest`
 - waits for a frame after any change with `debounceTime` to throttle rapid filter changes
   - i.e. to not request and cancel the api requests unnecessarily
@@ -264,9 +259,7 @@ Don't forget to add the injector tokens in unit tests too.
 describe('test', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [
-        { provide: AppRxStore, useFactory: createAppRxStore },
-      ],
+      providers: [{provide: AppRxStore, useFactory: createAppRxStore}],
     });
   });
 });
@@ -277,7 +270,7 @@ describe('test', () => {
 Just wrap `RxState` in an Angular service.
 
 ```typescript
-@Injectable({ providedIn: 'root' })
+@Injectable({providedIn: 'root'})
 export class RxStateService extends RxState<State> implements OnDestroy {
   constructor(@Inject(AppRxStore) protected readonly store: Store<State>) {
     super(store);
@@ -291,8 +284,6 @@ export class RxStateService extends RxState<State> implements OnDestroy {
 
 ## HowTo: Watch State
 
-Hint: The `RxState` watchers are auto-cleaned up when not subscribed to which is why it is a good idea to provide a "takeUntil" Observable (see `done$` in the example below). This way even if (for example) the `name$ | async` part in the whatever HTML template `UserDetailsComponent` would use is scoped in an `*ngIf` clause the `name$` value would still be updated correctly when the `*ngIf` toggles between true/false.
-
 ```typescript
 @Component({
   selector: 'app-user-details',
@@ -300,20 +291,16 @@ Hint: The `RxState` watchers are auto-cleaned up when not subscribed to which is
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class UserDetailsComponent implements OnDestroy {
-  constructor(private readonly rxState: RxStateService) { }
+  constructor(private readonly rxState: RxStateService) {}
 
-  private readonly done$ = new Subject();
-
-  readonly access$ = this.rxState.watch(state => state.userInfo.access.current, this.done$);
-  readonly groups$ = this.rxState.watch(state => state.userInfo.oauth.groups, this.done$);
-  readonly name$ = this.rxState.watch(state => state.userInfo.oauth.name, this.done$);
-  readonly accessGeneralDenied$ = this.rxState.watch(state => state.userInfo.accessGeneral <= EAccess.Unset, this.done$);
-  readonly accessGeneralGroupsNeeded$ = this.rxState.watch(state => [...state.userInfo.generalOauthGroupsRead, ...state.userInfo.generalOauthGroupsWrite], this.done$);
-
-  ngOnDestroy() {
-    this.done$.next();
-    this.done$.complete();
-  }
+  readonly access$ = this.rxState.pipe(watch((state) => state.userInfo.access.current));
+  readonly groups$ = this.rxState.pipe(watch((state) => state.userInfo.oauth.groups));
+  readonly name$ = this.rxState.pipe(watch((state) => state.userInfo.oauth.name));
+  readonly accessGeneralDenied$ = this.rxState.pipe(watch((state) => state.userInfo.accessGeneral <= EAccess.Unset));
+  readonly accessGeneralGroupsNeeded$ = combineLatest([
+    this.rxState.pipe(watch((state) => state.userInfo.generalOauthGroupsRead)),
+    this.rxState.pipe(watch((state) => state.userInfo.generalOauthGroupsWrite)),
+  ]).pipe(map(([reads, writes]) => [...reads, ...writes]));
 }
 ```
 
@@ -322,7 +309,6 @@ export class UserDetailsComponent implements OnDestroy {
 When the state grows it could be a good idea to separate the state flow process into the `RxStateService` being directly used for watching only and creating multiple setter services for state mutating.
 
 ```typescript
-
 // Create state from reducers and actors
 
 export class OAuthData {
@@ -331,15 +317,13 @@ export class OAuthData {
 
 export const set_oauth_name = actor<string>('SET_USER_oauth_active');
 
-export const state_oauth$ = initReduceAssemble$_(
-  <OAuthData>{ active: false },
-  { [set_oauth_active.type]: redSetPropertyIfNotSame_('active') });
+export const state_oauth$ = initReduceAssemble$_(<OAuthData>{active: false}, {[set_oauth_active.type]: redSetPropertyIfNotSame_('active')});
 
 // Create a service just for mutating the UserInfo state
 
-@Injectable({ providedIn: 'root' })
+@Injectable({providedIn: 'root'})
 export class RxStateSetUserInfoService {
-  constructor(private readonly rxState: RxStateService) { }
+  constructor(private readonly rxState: RxStateService) {}
 
   setOauthActive = this.rxState.act_(set_oauth_active, forceBool);
 }
@@ -347,7 +331,7 @@ export class RxStateSetUserInfoService {
 // Inject the mutator wherever UserInfo needs to be changed
 
 export class UserComponent {
-  constructor(private readonly rxMutateUserInfo: RxStateSetUserInfoService) { }
+  constructor(private readonly rxMutateUserInfo: RxStateSetUserInfoService) {}
   logout = () => this.rxMutateUserInfo.setOauthActive(false);
 }
 ```
@@ -356,4 +340,4 @@ export class UserComponent {
 
 MIT
 
-[Source Code]: https://github.com/rlexa/dd-rx-state
+[source code]: https://github.com/rlexa/dd-rx-state
