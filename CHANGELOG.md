@@ -1,3 +1,7 @@
+### _1.0.6_
+
+- _update_ **dependencies:** updated all dependencies and code conventions
+
 ### _1.0.5_
 
 - _update_ **dependencies:** updated all dependencies and code conventions
